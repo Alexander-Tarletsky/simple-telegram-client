@@ -27,18 +27,10 @@ class Connection(BaseModel):
     user: User
 
 
-# class ResponseDetails(BaseModel):
-#     status: str
-#     error: str | None
-#     message: str
-#     user_id: UUID
-#     phone_number: str | None
-
-
 class APIResponse(BaseModel):
-    status_ok: bool
-    details: dict = Field(default={})
-    data: dict = Field(default={})
+    status_code: int
+    message: str
+    data: dict
 
 
 class AuthRequest(BaseModel):
