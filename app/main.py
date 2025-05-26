@@ -6,8 +6,14 @@ from fastapi import FastAPI, HTTPException
 from telethon.errors import SessionPasswordNeededError
 
 from app.api.v1 import endpoints
-from app.exceptions import handlers
-from app.exceptions.exceptions import AuthTelegramException
+from app.exceptions.exceptions import AuthTelegramException, NotFoundClientException
+from app.exceptions.handlers import (
+    general_exception_handler,
+    http_exception_handler,
+    auth_telegram_exception_handler,
+    two_fa_password_required_handler,
+    not_found_client_exception_handler,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -26,10 +32,11 @@ app.include_router(
 )
 
 
-app.add_exception_handler(Exception, handlers.general_exception_handler)
-app.add_exception_handler(HTTPException, handlers.http_exception_handler)
-app.add_exception_handler(AuthTelegramException, handlers.auth_telegram_exception_handler)
-app.add_exception_handler(SessionPasswordNeededError, handlers.two_fa_password_required_handler)
+app.add_exception_handler(Exception, general_exception_handler)
+app.add_exception_handler(HTTPException, http_exception_handler)
+app.add_exception_handler(AuthTelegramException, auth_telegram_exception_handler)
+app.add_exception_handler(SessionPasswordNeededError, two_fa_password_required_handler)
+app.add_exception_handler(NotFoundClientException, not_found_client_exception_handler)
 
 
 if __name__ == "__main__":

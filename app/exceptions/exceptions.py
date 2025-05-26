@@ -5,14 +5,10 @@ from starlette import status
 class BaseCustomAppException(Exception):
     def __init__(
         self,
-        # status_code: int,
         detail: str | None = None,
-        # headers: dict | None = None,
     ) -> None:
-        super().__init__(detail)
-        # self.status_code = status_code
         self.detail = detail or "An error occurred."
-        # self.headers = headers or {}
+        super().__init__(detail)
 
 
 class AuthTelegramException(HTTPException):
