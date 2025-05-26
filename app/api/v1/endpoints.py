@@ -11,6 +11,8 @@ from app.dependencies.auth import verify_api_key
 from app.exceptions.exceptions import AuthTelegramException, NotFoundClientException
 from app.main import TG_API_ID, TG_API_HASH
 from app.models import Connection, AuthRequest, APIResponse
+from app.security.crypto import decrypt_session, encrypt_session
+from app.services.session import send_encrypted_session
 from app.storage import storage
 from app.utils import send_welcome_message, get_user_info
 
@@ -27,14 +29,18 @@ async def connect(connection: Connection) -> dict:
     """
     user = connection.user
 
+    # Decrypt the session data
+    session_data = decrypt_session(connection.session_data)
+
     client = TelegramClient(
-        StringSession(connection.session_data),
+        StringSession(session_data),
         TG_API_ID,
         TG_API_HASH,
     )
 
-    await client.connect()
     storage.add_unauthorized_client(user.id, client)
+    logger.info("Connecting to Telegram for user %s with phone %s", user.id, user.phone)
+    await client.connect()
 
     # Check if the client is already authorized
     if not await client.is_user_authorized():
@@ -78,6 +84,7 @@ async def authorize_client(auth: AuthRequest) -> dict:
     f2a_password = {"password": auth.password} if auth.password else {}
 
     try:
+        logger.info("Authorizing user %s with phone %s", auth.user_id, auth.phone)
         await client.sign_in(
             phone=auth.phone,
             code=auth.code,  # Code received from the user phone
@@ -123,15 +130,17 @@ async def disconnect(user_id: UUID) -> dict:
         raise NotFoundClientException(str(e))
 
     await client.disconnect()
+
     session_data = await client.session.save()
-    # TODO: Encrypt session data
-    # TODO: Send session data to the service
+    await send_encrypted_session(user_id, encrypt_session(session_data))
+    logger.info("Session data for user %s has been sent to the storage service.", user_id)
+
     storage.remove_active_client(user_id)
 
-    logger.info("User %s has been disconnected.", user_id)
+    logger.info("User %s has been disconnected from Telegram.", user_id)
     return {
         "status_code": status.HTTP_200_OK,
-        "message": "Client has been disconnected.",
+        "message": "User %s has been disconnected." % user_id,
         "data": {},
     }
 
