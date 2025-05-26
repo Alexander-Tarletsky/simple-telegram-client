@@ -1,6 +1,5 @@
 import logging
 import os
-import pathlib
 
 from fastapi import FastAPI, HTTPException
 from telethon.errors import SessionPasswordNeededError
@@ -17,8 +16,8 @@ from app.exceptions.handlers import (
 
 logger = logging.getLogger(__name__)
 
-API_ID = os.getenv("API_ID", "")
-API_HASH = os.getenv("API_HASH", "")
+TG_API_ID = os.getenv("TG_API_ID", "")
+TG_API_HASH = os.getenv("TG_API_HASH", "")
 
 # BASE_ROOT = pathlib.Path(__file__).resolve().parent
 

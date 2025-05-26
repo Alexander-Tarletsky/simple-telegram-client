@@ -1,14 +1,15 @@
 import logging
 from uuid import UUID
 
-from fastapi import APIRouter
+from fastapi import APIRouter, Depends
 from starlette import status
 from telethon import TelegramClient
 from telethon.errors import SessionPasswordNeededError
 from telethon.sessions import StringSession
 
+from app.dependencies.auth import verify_api_key
 from app.exceptions.exceptions import AuthTelegramException, NotFoundClientException
-from app.main import API_ID, API_HASH
+from app.main import TG_API_ID, TG_API_HASH
 from app.models import Connection, AuthRequest, APIResponse
 from app.storage import storage
 from app.utils import send_welcome_message, get_user_info
@@ -16,7 +17,7 @@ from app.utils import send_welcome_message, get_user_info
 logger = logging.getLogger(__name__)
 
 
-router = APIRouter()
+router = APIRouter(dependencies=[Depends(verify_api_key)])
 
 @router.post("/connect", response_model=APIResponse)
 async def connect(connection: Connection) -> dict:
@@ -28,8 +29,8 @@ async def connect(connection: Connection) -> dict:
 
     client = TelegramClient(
         StringSession(connection.session_data),
-        API_ID,
-        API_HASH,
+        TG_API_ID,
+        TG_API_HASH,
     )
 
     await client.connect()
@@ -79,8 +80,8 @@ async def authorize_client(auth: AuthRequest) -> dict:
     try:
         await client.sign_in(
             phone=auth.phone,
-            code=auth.code,
-            **f2a_password
+            code=auth.code,  # Code received from the user phone
+            **f2a_password,
         )
     except SessionPasswordNeededError as e:
         logger.info("2FA password required for user %s with phone %s", auth.user_id, auth.phone)
@@ -123,16 +124,15 @@ async def disconnect(user_id: UUID) -> dict:
 
     await client.disconnect()
     session_data = await client.session.save()
-    # TODO: await api.save_session(user_id, session_data)
+    # TODO: Encrypt session data
+    # TODO: Send session data to the service
     storage.remove_active_client(user_id)
 
     logger.info("User %s has been disconnected.", user_id)
     return {
         "status_code": status.HTTP_200_OK,
         "message": "Client has been disconnected.",
-        "data": {
-            "session_data": session_data,  # TODO: Encrypt this data before returning to the service
-        },
+        "data": {},
     }
 
 
