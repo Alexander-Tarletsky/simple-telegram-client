@@ -6,12 +6,12 @@ from starlette.requests import Request
 from starlette.responses import JSONResponse
 from telethon.errors import SessionPasswordNeededError
 
-from app.exceptions.exceptions import AuthTelegramException
+from app.exceptions.exceptions import AuthTelegramException, NotFoundClientException
 
 logger = logging.getLogger(__name__)
 
 
-async def general_exception_handler(request: Request, exc: Exception):
+async def general_exception_handler(request: Request, exc: Exception) -> JSONResponse:
     """
     Custom exception handler for general exceptions.
     Logs the error and returns a JSON response with the error details.
@@ -30,7 +30,7 @@ async def general_exception_handler(request: Request, exc: Exception):
     )
 
 
-async def http_exception_handler(request: Request, exc: HTTPException):
+async def http_exception_handler(request: Request, exc: HTTPException) -> JSONResponse:
     """
     Custom exception handler for HTTPException.
     Logs the error and returns a JSON response with the error details.
@@ -49,7 +49,8 @@ async def http_exception_handler(request: Request, exc: HTTPException):
     )
 
 
-async def auth_telegram_exception_handler(request: Request, exc: AuthTelegramException):
+async def auth_telegram_exception_handler(
+    request: Request, exc: AuthTelegramException) -> JSONResponse:
     """
     Custom exception handler for AuthTelegramException.
     Logs the error and returns a JSON response with the error details.
@@ -69,7 +70,8 @@ async def auth_telegram_exception_handler(request: Request, exc: AuthTelegramExc
 
 
 # 2FA password required exception handler
-async def two_fa_password_required_handler(request: Request, exc: SessionPasswordNeededError):
+async def two_fa_password_required_handler(
+    request: Request, exc: SessionPasswordNeededError) -> JSONResponse:
     """
     Custom exception handler for 2FA password required exceptions.
     Logs the error and returns a JSON response with the error details.
@@ -81,6 +83,27 @@ async def two_fa_password_required_handler(request: Request, exc: SessionPasswor
             "status": status.HTTP_401_UNAUTHORIZED,
             "error": "Two-Factor Authentication Required",
             "message": "Please provide your 2FA password to continue.",
+        },
+        headers={
+            "Content-Type": "application/json",
+        },
+    )
+
+
+# NotFoundClientException
+async def not_found_client_exception_handler(
+    request: Request, exc: NotFoundClientException) -> JSONResponse:
+    """
+    Custom exception handler for NotFoundClientException.
+    Logs the error and returns a JSON response with the error details.
+    """
+    logger.error("NotFoundClientException occurred: %s", str(exc.detail))
+    return JSONResponse(
+        status_code=exc.status_code,
+        content={
+            "status": exc.status_code,
+            "error": str(exc.detail),
+            "message": str(exc.detail),
         },
         headers={
             "Content-Type": "application/json",

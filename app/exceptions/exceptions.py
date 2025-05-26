@@ -2,9 +2,17 @@ from fastapi import HTTPException
 from starlette import status
 
 
-class CustomAppException(Exception):
-    def __init__(self, name: str):
-        self.name = name
+class BaseCustomAppException(Exception):
+    def __init__(
+        self,
+        # status_code: int,
+        detail: str | None = None,
+        # headers: dict | None = None,
+    ) -> None:
+        super().__init__(detail)
+        # self.status_code = status_code
+        self.detail = detail or "An error occurred."
+        # self.headers = headers or {}
 
 
 class AuthTelegramException(HTTPException):
@@ -15,7 +23,9 @@ class AuthTelegramException(HTTPException):
         )
 
 
-# class BaseHTTPException(HTTPException):
-#     def __init__(self, status_code: int, detail: str, **kwargs) -> None:
-#         super().__init__(status_code=status_code, detail=detail, **kwargs)
-
+class NotFoundClientException(HTTPException):
+    def __init__(self, msg: str | None = None) -> None:
+        super().__init__(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=msg or "User client not found."
+        )

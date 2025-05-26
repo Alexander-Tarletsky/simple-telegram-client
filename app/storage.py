@@ -63,6 +63,7 @@ class ClientStorage:
         """
         if user_id in self._active_clients:
             del self._active_clients[user_id]
+            logger.info(f"Client with user_id {user_id} has been removed from active clients.")
         elif raise_exc:
             raise KeyError(f"Client with user_id {user_id} not found in active clients.")
         else:
@@ -77,6 +78,7 @@ class ClientStorage:
         """
         if user_id in self._unauthorized_clients:
             del self._unauthorized_clients[user_id]
+            logger.info(f"Client with user_id {user_id} has been removed from unauthorized clients.")
         elif raise_exc:
             raise KeyError(f"Client with user_id {user_id} not found in unauthorized clients.")
         else:

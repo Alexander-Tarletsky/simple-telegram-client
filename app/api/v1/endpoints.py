@@ -1,18 +1,17 @@
 import logging
 from uuid import UUID
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter
 from starlette import status
-from starlette.responses import JSONResponse
 from telethon import TelegramClient
 from telethon.errors import SessionPasswordNeededError
 from telethon.sessions import StringSession
 
-from app.exceptions.exceptions import AuthTelegramException
+from app.exceptions.exceptions import AuthTelegramException, NotFoundClientException
 from app.main import API_ID, API_HASH
 from app.models import Connection, AuthRequest, APIResponse
 from app.storage import storage
-from app.utils import send_welcome_message
+from app.utils import send_welcome_message, get_user_info
 
 logger = logging.getLogger(__name__)
 
@@ -46,35 +45,15 @@ async def connect(connection: Connection) -> dict:
         raise AuthTelegramException("User is not authorized. Code sent to phone.")
 
     # Check the 2FA status by sending a welcome message
-    try:
-        await send_welcome_message(client, user)
-    except SessionPasswordNeededError as e:  # This means the user has 2FA enabled
-        logger.info("2FA password required for user %s with phone %s", user.id, user.phone)
-
-        raise e
-
-    except Exception as e:
-        logger.error("Failed to send welcome message for user %s: %s", user.id, str(e))
-        raise e
+    await check_2fa_status(client, user.id)
 
     # Check getting user information
-    me = await client.get_me()
-
-    if not me:
-        logger.error("Failed to retrieve basic info for user %s", user.id)
-        raise Exception("Failed to retrieve user information.")
-
-    logger.info("User %s is authorized and connected.", user.id)
+    await get_user_info(client, user.id, raise_exc=True)
+    logger.info("User: %s is authorized and connected with telegram.", user.id)
 
     # Move the client to the authorized clients storage
-    try:
-        storage.move_client_to_active(user.id)
-    except KeyError as e:
-        logger.error("Client for user: %s not found in unauthorized clients.", user.id)
-
-        raise Exception(e)
-
-    logger.info("Client for user: %s has successfully connected.", user.id)
+    await move_client_to_active(user.id)
+    logger.info("User %s is authorized and connected.", user.id)
 
     # Return a successful response
     return {
@@ -84,28 +63,16 @@ async def connect(connection: Connection) -> dict:
     }
 
 
-@router.post("/authorize_client")
-async def authorize_client(auth: AuthRequest):
+@router.post("/authorize_client", response_model=APIResponse)
+async def authorize_client(auth: AuthRequest) -> dict:
     """
     Authorize a client using the code sent to the user's phone and the 2FA password if required.
     """
     try:
         client = storage.get_unauthorized_client(auth.user_id)
-    except KeyError:
+    except KeyError as e:
         logger.error("Client with user_id %s not found in unauthorized clients.", auth.user_id)
-        return JSONResponse(
-            status_code=404,
-            content={
-                "status": "error",
-                "error": "Client not found.",
-                "message": "Client not found. Please connect first.",
-                "user_id": auth.user_id,
-            },
-            headers={
-                "WWW-Authenticate": "Bearer",
-                "Content-Type": "application/json",
-            }
-        )
+        raise NotFoundClientException(str(e))
 
     f2a_password = {"password": auth.password} if auth.password else {}
 
@@ -116,122 +83,81 @@ async def authorize_client(auth: AuthRequest):
             **f2a_password
         )
     except SessionPasswordNeededError as e:
-        logger.info("2FA password required for user %s", auth.phone)
-        return JSONResponse(
-            status_code=401,
-            content={
-                "status": "password_required",
-                "error": str(e),
-                "message": "2FA password required.",
-                "user_id": auth.user_id,
-                "phone_number": auth.phone,
-            },
-            headers={
-                "WWW-Authenticate": "Bearer",
-                "Content-Type": "application/json",
-            }
-        )
-    except Exception as e:
-        logger.error("Failed to authorize client: %s", e)
-        raise HTTPException(
-            status_code=400,
-            detail={
-                "status": "error",
-                "error": "Failed to authorize client: %s" % str(e),
-                "message": "Failed to authorize client: %s" % str(e),
-                "user_id": auth.user_id,
-                "phone_number": auth.phone,
-            }
+        logger.info("2FA password required for user %s with phone %s", auth.user_id, auth.phone)
+        raise e
+    else:
+        logger.info(
+            "User %s is authorized with phone %s", auth.user_id, auth.phone
         )
 
     # Check getting user information
-    me = await client.get_me()
+    await get_user_info(client, auth.user_id, raise_exc=True)
+    logger.info("User: %s is authorized and connected with telegram.", auth.user_id)
 
-    if not me:
-        logger.error("Failed to retrieve user information.")
-        raise HTTPException(
-            status_code=500,
-            detail={
-                "status": "error",
-                "error": "Failed to retrieve user information.",
-                "message": "Failed to retrieve user information. Try to reconnect.",
-                "user_id": auth.user_id,
-                "phone_number": auth.phone,
-            }
-        )
+    # Check the 2FA status by sending a welcome message
+    await check_2fa_status(client, auth.user_id)
+    logger.info("Welcome message sent to user %s with phone %s", auth.user_id, auth.phone)
 
     # Move the client to the authorized clients storage
-    try:
-        storage.move_client_to_active(auth.user_id)
-    except KeyError:
-        logger.error("Client with user_id %s not found in unauthorized clients.", auth.user_id)
-        return JSONResponse(
-            status_code=404,
-            content={
-                "status": "error",
-                "error": "Client not found.",
-                "message": "Client not found. Please connect first.",
-                "user_id": auth.user_id,
-            },
-            headers={
-                "WWW-Authenticate": "Bearer",
-                "Content-Type": "application/json",
-            }
-        )
-
+    await move_client_to_active(auth.user_id)
     logger.info("User %s is authorized and connected.", auth.user_id)
-    return JSONResponse(
-        status_code=200,
-        content={
-            "status": "authorized",
-            "message": "Client is authorized and connected.",
-            "user_id": auth.user_id,
-            "phone_number": auth.phone,
-        },
-        headers={
-            "Content-Type": "application/json",
-        }
-    )
+
+    # Return a successful response
+    return {
+        "status_code": status.HTTP_200_OK,
+        "message": "Client is authorized and connected.",
+        "data": {},
+    }
 
 
-@router.post("/disconnect/{user_id}")
-async def disconnect(user_id: UUID):
+@router.post("/disconnect/{user_id}", response_model=APIResponse)
+async def disconnect(user_id: UUID) -> dict:
     """
     Disconnect the client associated with the given user_id.
     """
     try:
         client = storage.get_active_client(user_id)
-    except KeyError:
+    except KeyError as e:
         logger.error("Client with user_id %s not found in active clients.", user_id)
-        return JSONResponse(
-            status_code=404,
-            content={
-                "status": "error",
-                "error": "Client not found.",
-                "message": "Client not found. Please connect first.",
-                "user_id": user_id,
-            },
-            headers={
-                "WWW-Authenticate": "Bearer",
-                "Content-Type": "application/json",
-            }
-        )
+        raise NotFoundClientException(str(e))
 
     await client.disconnect()
-    storage.add_unauthorized_client(user_id, client)
     session_data = await client.session.save()
     # TODO: await api.save_session(user_id, session_data)
     storage.remove_active_client(user_id)
 
-    logger.info("User %s is disconnected.", user_id)
-    return JSONResponse(
-        status_code=200,
-        content={
-            "status": "disconnected",
-            "message": "Client is disconnected.",
-            "user_id": user_id,
+    logger.info("User %s has been disconnected.", user_id)
+    return {
+        "status_code": status.HTTP_200_OK,
+        "message": "Client has been disconnected.",
+        "data": {
+            "session_data": session_data,  # TODO: Encrypt this data before returning to the service
         },
-        headers={
-            "Content-Type": "application/json",
-        }
-    )
+    }
+
+
+async def check_2fa_status(client: TelegramClient, user_id: UUID):
+    """
+    Check if the user has 2FA enabled by sending a welcome message.
+    If 2FA is enabled and the user has not provided a password, raise an exception.
+    """
+    try:
+        await send_welcome_message(client)
+    except SessionPasswordNeededError as e:  # This means the user has 2FA enabled
+        logger.info("2FA password required for user %s", user_id)
+        raise e
+    else:
+        logger.info("Welcome message sent successfully to user %s", user_id)
+
+
+async def move_client_to_active(user_id: UUID):
+    """
+    Move the client associated with the given user_id from unauthorized to active clients.
+    """
+    try:
+        storage.move_client_to_active(user_id)
+    except KeyError:
+        logger.error("Client with user_id %s not found in unauthorized clients.", user_id)
+        raise NotFoundClientException(f"Client with user_id {user_id} not found.")
+    else:
+        logger.info("Client for user: %s has successfully connected.", user_id)
