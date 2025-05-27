@@ -7,9 +7,9 @@ from telethon import TelegramClient
 from telethon.errors import SessionPasswordNeededError
 from telethon.sessions import StringSession
 
+from app.config import settings
 from app.dependencies.auth import verify_api_key
 from app.exceptions.exceptions import AuthTelegramException, NotFoundClientException
-from app.main import TG_API_ID, TG_API_HASH
 from app.models import Connection, AuthRequest, APIResponse
 from app.security.crypto import decrypt_session, encrypt_session
 from app.services.session import send_encrypted_session
@@ -34,8 +34,8 @@ async def connect(connection: Connection) -> dict:
 
     client = TelegramClient(
         StringSession(session_data),
-        TG_API_ID,
-        TG_API_HASH,
+        settings.TG_API_ID,
+        settings.TG_API_HASH,
     )
 
     storage.add_unauthorized_client(user.id, client)
@@ -53,6 +53,7 @@ async def connect(connection: Connection) -> dict:
 
     # Check the 2FA status by sending a welcome message
     await check_2fa_status(client, user.id)
+    # TODO: Check if the user has provided a 2FA password
 
     # Check getting user information
     await get_user_info(client, user.id, raise_exc=True)
@@ -81,14 +82,14 @@ async def authorize_client(auth: AuthRequest) -> dict:
         logger.error("Client with user_id %s not found in unauthorized clients.", auth.user_id)
         raise NotFoundClientException(str(e))
 
-    f2a_password = {"password": auth.password} if auth.password else {}
+    tfa_password = {"password": auth.tfa_password or {}}  # Use an empty dict if no password is provided
 
     try:
         logger.info("Authorizing user %s with phone %s", auth.user_id, auth.phone)
         await client.sign_in(
             phone=auth.phone,
             code=auth.code,  # Code received from the user phone
-            **f2a_password,
+            **tfa_password,
         )
     except SessionPasswordNeededError as e:
         logger.info("2FA password required for user %s with phone %s", auth.user_id, auth.phone)
@@ -145,7 +146,7 @@ async def disconnect(user_id: UUID) -> dict:
     }
 
 
-async def check_2fa_status(client: TelegramClient, user_id: UUID):
+async def check_2fa_status(client: TelegramClient, user_id: UUID, raise_exc: bool = False):
     """
     Check if the user has 2FA enabled by sending a welcome message.
     If 2FA is enabled and the user has not provided a password, raise an exception.
@@ -153,10 +154,11 @@ async def check_2fa_status(client: TelegramClient, user_id: UUID):
     try:
         await send_welcome_message(client)
     except SessionPasswordNeededError as e:  # This means the user has 2FA enabled
-        logger.info("2FA password required for user %s", user_id)
+        logger.info("2FA password required for user %s", str(user_id))
+        # TODO: Check if the user has provided a 2FA password
         raise e
     else:
-        logger.info("Welcome message sent successfully to user %s", user_id)
+        logger.info("Welcome message sent successfully to user %s", str(user_id))
 
 
 async def move_client_to_active(user_id: UUID):

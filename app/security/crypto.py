@@ -1,16 +1,20 @@
 import base64
 import os
-from cryptography.hazmat.primitives.ciphers import Cipher, algorithms, modes
+
 from cryptography.hazmat.backends import default_backend
+from cryptography.hazmat.primitives.ciphers import Cipher, algorithms, modes
 
-# Ensure the encryption key is set in the environment variable
-# TODO: Implement Pydantic settings for better configuration management
-if "ENCRYPTION_KEY" not in os.environ:
-    raise ValueError("ENCRYPTION_KEY environment variable is not set.")
+from config import settings
 
-ENCRYPTION_KEY = base64.b64decode(os.getenv("ENCRYPTION_KEY"))
+ENCRYPTION_KEY = base64.b64decode(settings.ENCRYPTION_KEY)
+
 
 def encrypt_session(data: str) -> str:
+    """
+    Encrypt the session data using the encryption key.
+    Args:
+        data (str): The session data to encrypt.
+    """
     iv = os.urandom(12)
     cipher = Cipher(algorithms.AES(ENCRYPTION_KEY), modes.GCM(iv), backend=default_backend())
     encryptor = cipher.encryptor()
@@ -41,4 +45,3 @@ def decrypt_session(encrypted_data: str) -> str:
     decrypted_data = decryptor.update(ciphertext) + decryptor.finalize()
 
     return decrypted_data.decode()
-

@@ -1,5 +1,4 @@
 import logging
-import os
 
 from fastapi import FastAPI, HTTPException
 from telethon.errors import SessionPasswordNeededError
@@ -13,20 +12,16 @@ from app.exceptions.handlers import (
     two_fa_password_required_handler,
     not_found_client_exception_handler,
 )
+from config import settings
 
 logger = logging.getLogger(__name__)
-
-TG_API_ID = os.getenv("TG_API_ID", "")
-TG_API_HASH = os.getenv("TG_API_HASH", "")
-
-# BASE_ROOT = pathlib.Path(__file__).resolve().parent
 
 
 app = FastAPI()
 
 app.include_router(
     endpoints.router,
-    prefix="/api/v1",
+    prefix=settings.API_V1_STR,
     tags=["v1"],
 )
 
